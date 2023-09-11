@@ -15,7 +15,6 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>seckill-order</module>
         <module>seckill-sdk</module>
     </modules>
 
@@ -25,25 +24,30 @@
     </properties>
 
     <dependencies>
+
+
+
         <!-- 引入 redis 的依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
-        <!--mybatis依赖包-->
+<!--        &lt;!&ndash;mybatis依赖包&ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>org.mybatis</groupId>-->
+<!--            <artifactId>mybatis</artifactId>-->
+<!--            <version>3.5.11</version>-->
+<!--        </dependency>-->
+
+
+
         <dependency>
-            <groupId>org.mybatis</groupId>
-            <artifactId>mybatis</artifactId>
-            <version>3.5.11</version>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <version>3.4.3</version>
         </dependency>
 
-        <!--mysql依赖包-->
-        <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.30</version>
-        </dependency>
     </dependencies>
 
 </project>
