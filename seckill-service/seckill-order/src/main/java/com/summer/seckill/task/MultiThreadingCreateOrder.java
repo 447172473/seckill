@@ -7,7 +7,6 @@ import com.summer.seckill.SeckillStatus;
 import com.summer.seckill.common.IdUtils;
 import com.summer.seckill.dao.SeckillGoodsDao;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
