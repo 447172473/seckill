@@ -31,53 +31,80 @@ public class MultiThreadingCreateOrder {
      */
     @Async("getAsyncExecutor")
     public void createOrder() {
+        try {
+            System.out.println("----准备@Async执行----");
 
-        //从队列中获取排队信息
-        SeckillStatus seckillStatus = (SeckillStatus)
-                redisTemplate.boundListOps("SeckillOrderQueue").rightPop();
-        String time = seckillStatus.getTime();
-        String username = seckillStatus.getUsername();
-        Long id = seckillStatus.getGoodsId();
-        //获取商品数据
-        SeckillGoods goods = (SeckillGoods) redisTemplate.boundHashOps("SeckillGoods_"
-                + time).get(id);
+            SeckillStatus seckillStauts = (SeckillStatus) redisTemplate.boundListOps("SeckillOrderQueue").rightPop();
+            if(seckillStauts==null){
+                System.out.println("----redis key SeckillOrderQueue null----");
+                return;
+            }
 
-        //如果没有库存，则直接抛出异常
-        if (goods == null || goods.getStockCount() <= 0) {
-            throw new RuntimeException("已售罄!");
+            //查询商品详情
+            SeckillGoods goods = (SeckillGoods) redisTemplate.boundHashOps("SeckillGoods_"+seckillStauts.getTime()).get(seckillStauts.getGoodsId());
+            if(goods==null || goods.getStockCount()<=0){
+                //清理排队信息
+                clearQueue(seckillStauts);
+                System.out.println("----redis key SeckillGoods_ null----");
+                return;
+            }
+
+
+
+            //创建订单
+            SeckillOrder seckillOrder = new SeckillOrder();
+            seckillOrder.setId(IdUtils.getId());
+            seckillOrder.setSeckillId(seckillStauts.getGoodsId());
+            seckillOrder.setMoney(goods.getCostPrice());
+            seckillOrder.setUserId(seckillStauts.getUsername());
+            seckillOrder.setSellerId(goods.getSellerId());
+            seckillOrder.setCreateTime(new Date());
+            seckillOrder.setStatus("0");
+            redisTemplate.boundHashOps("SeckillOrder").put(seckillStauts.getUsername(),seckillOrder);
+
+            //库存削减
+            Long surplusCount = redisTemplate.boundHashOps("SeckillGoodsCount").increment(goods.getId(), -1);
+            goods.setStockCount(surplusCount.intValue());
+            //商品库存=0->将数据同步到MySQL，并清理Redis缓存
+            if(surplusCount<=0){
+                //并且将商品数据同步到MySQL中
+                seckillGoodsDao.updateById(goods);
+                //清理Redis缓存
+                redisTemplate.boundHashOps("SeckillGoods_"+seckillStauts.getTime()).delete(seckillStauts.getOrderId());
+            }else{
+                //将数据同步到Redis
+                redisTemplate.boundHashOps("SeckillGoods_"+seckillStauts.getTime()).put(seckillStauts.getOrderId(),goods);
+            }
+
+            //变更抢单状态
+            seckillStauts.setOrderId(seckillOrder.getId());
+            seckillStauts.setMoney(seckillOrder.getMoney().floatValue());
+            seckillStauts.setStatus(2); //抢单成功，待支付
+            redisTemplate.boundHashOps("UserQueueStatus").put(seckillStauts.getUsername(),seckillStauts);
+
+            System.out.println("----正在执行----");
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-
-        //如果有库存，则创建秒杀商品订单
-        SeckillOrder seckillOrder = new SeckillOrder();
-        seckillOrder.setId(IdUtils.getId()); //分布式部署，并发时可能会出现相同ID 需要注意
-        seckillOrder.setSeckillId(id);
-        seckillOrder.setMoney(goods.getCostPrice());
-        seckillOrder.setUserId(username);
-        seckillOrder.setSellerId(goods.getSellerId());
-        seckillOrder.setCreateTime(new Date());
-        seckillOrder.setStatus("0");
-
-        //抢单成功，更新抢单状态,排队->等待支付
-        seckillStatus.setOrderId(seckillOrder.getId());
-        seckillStatus.setMoney(seckillOrder.getMoney().floatValue());
-
-        //将秒杀订单存入到Redis中
-        redisTemplate.boundHashOps("SeckillOrder").put(username, seckillOrder);
-        //库存减少
-        goods.setStockCount(goods.getStockCount() - 1);
-        //判断当前商品是否还有库存
-        if (goods.getStockCount() <= 0) {
-            //并且将商品数据同步到MySQL中
-            seckillGoodsDao.updateById(goods);
-            //如果没有库存,则清空Redis缓存中该商品
-            redisTemplate.boundHashOps("SeckillGoods_" + time).delete(id);
-            seckillStatus.setStatus(4);
-        } else {
-            //如果有库存，则直数据重置到Reids中
-            redisTemplate.boundHashOps("SeckillGoods_" + time).put(id, goods);
-            seckillStatus.setStatus(2);
-        }
-        redisTemplate.boundHashOps("SeckillOrderQueue").put(username,seckillStatus);
-        System.out.println("开始执行....");
     }
+
+
+    /***
+     * 清理用户排队信息
+     * @param seckillStatus
+     */
+    public void clearQueue(SeckillStatus seckillStatus){
+        //清理排队标示
+        redisTemplate.boundHashOps("UserQueueCount").delete(seckillStatus.getUsername());
+        //清理抢单标示
+        redisTemplate.boundHashOps("UserQueueStatus").delete(seckillStatus.getUsername());
+        updateUserQueueStatus(seckillStatus);
+    }
+
+    private void updateUserQueueStatus(SeckillStatus seckillStauts){
+        seckillStauts.setStatus(4); //抢单成功，待支付
+        redisTemplate.boundHashOps("UserQueueStatus").put(seckillStauts.getUsername(),seckillStauts);
+
+    }
+
 }
